@@ -252,7 +252,6 @@ export const useBoard = create<BoardState>((set, get) => {
     /** 拖动中实时更新位置（不入历史；盯人跟随 + 成组移动在此生效） */
     moveElement: (id, to) => {
       const { doc, groupMode, selectedIds } = get();
-      const L = 9999; // 边界在 UI 层 clamp，这里直接信任传入
       const player = doc.players.find((p) => p.id === id);
       const movingIds = new Set<string>(
         player && groupMode && selectedIds.includes(id) ? selectedIds : [id],
@@ -262,6 +261,7 @@ export const useBoard = create<BoardState>((set, get) => {
         (p) => p.bindToId && movingIds.has(p.bindToId) && !movingIds.has(p.id),
       );
 
+      // 基准位移 = 被拖元素从当前位置到目标位置的差；整组都套用这个位移（保持队形）
       const deltaFor = (eid: string): Vec => {
         if (eid === 'ball' && doc.ball) return { x: to.x - doc.ball.x, y: to.y - doc.ball.y };
         const el =
@@ -274,8 +274,7 @@ export const useBoard = create<BoardState>((set, get) => {
 
       const players = doc.players.map((p) => {
         if (movingIds.has(p.id)) {
-          const d = deltaFor(p.id);
-          return { ...p, x: p.x + d.x, y: p.y + d.y };
+          return { ...p, x: p.x + baseDelta.x, y: p.y + baseDelta.y };
         }
         const f = followers.find((fp) => fp.id === p.id);
         if (f) return { ...p, x: p.x + baseDelta.x, y: p.y + baseDelta.y };
@@ -287,9 +286,11 @@ export const useBoard = create<BoardState>((set, get) => {
       const dummies = doc.dummies.map((dm) =>
         dm.id === id ? { ...dm, x: to.x, y: to.y } : dm,
       );
-      const ball = doc.ball && id === 'ball' ? { ...doc.ball, x: to.x, y: to.y } : doc.ball;
+      const ball =
+        doc.ball && movingIds.has('ball')
+          ? { ...doc.ball, x: doc.ball.x + baseDelta.x, y: doc.ball.y + baseDelta.y }
+          : doc.ball;
       set({ doc: { ...doc, players, cones, dummies, ball } });
-      void L;
     },
 
     /** 拖拽结束：入历史 + 若被拖的是绑定者本人则更新偏移 */
